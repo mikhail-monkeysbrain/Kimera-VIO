@@ -33,6 +33,7 @@
 #include <glog/logging.h>
 
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <limits>  // for numeric_limits<>
 #include <map>
@@ -236,6 +237,45 @@ BackendOutput::UniquePtr VioBackend::spinOnce(const BackendInput& input) {
                 << " dPredStateVmmps="
                 << (jt_state_v - jt_pred_v).norm() * 1000.0
                 << std::endl;
+    }
+
+    if (std::getenv("JTZERO_DIAG_CHAIN_CSV") != nullptr && curr_kf_id_ > 0) {
+      static std::ofstream jt_chain_csv(
+          "/home/vio/jtzero_kimera_chain.csv", std::ios::trunc);
+      static bool jt_chain_csv_header = false;
+      if (jt_chain_csv) {
+        if (!jt_chain_csv_header) {
+          jt_chain_csv
+              << "timestamp_ns,keyframe,"
+              << "pred_px,pred_py,pred_pz,"
+              << "state_px,state_py,state_pz,"
+              << "incr_px,incr_py,incr_pz,"
+              << "pred_vx,pred_vy,pred_vz,"
+              << "state_vx,state_vy,state_vz,"
+              << "state_incr_mm,pred_state_mm,pred_state_v_mm_s\n";
+          jt_chain_csv_header = true;
+        }
+        const auto jt_pred_p = debug_info_.navstate_k_.pose().translation();
+        const auto jt_state_p = W_Pose_B_lkf_from_state_.translation();
+        const auto jt_incr_p = W_Pose_B_lkf_from_increments_.translation();
+        const auto jt_pred_v = debug_info_.navstate_k_.velocity();
+        const auto jt_state_v = W_Vel_B_lkf_;
+        jt_chain_csv << input.timestamp_ << ',' << curr_kf_id_ << ','
+                     << jt_pred_p.x() << ',' << jt_pred_p.y() << ','
+                     << jt_pred_p.z() << ','
+                     << jt_state_p.x() << ',' << jt_state_p.y() << ','
+                     << jt_state_p.z() << ','
+                     << jt_incr_p.x() << ',' << jt_incr_p.y() << ','
+                     << jt_incr_p.z() << ','
+                     << jt_pred_v.x() << ',' << jt_pred_v.y() << ','
+                     << jt_pred_v.z() << ','
+                     << jt_state_v.x() << ',' << jt_state_v.y() << ','
+                     << jt_state_v.z() << ','
+                     << (jt_incr_p - jt_state_p).norm() * 1000.0 << ','
+                     << (jt_state_p - jt_pred_p).norm() * 1000.0 << ','
+                     << (jt_state_v - jt_pred_v).norm() * 1000.0 << '\n';
+        jt_chain_csv.flush();
+      }
     }
 
     // Create Backend Output Payload.
