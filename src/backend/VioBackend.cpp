@@ -32,6 +32,8 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include <cstdlib>
+#include <iostream>
 #include <limits>  // for numeric_limits<>
 #include <map>
 #include <string>
@@ -204,6 +206,36 @@ BackendOutput::UniquePtr VioBackend::spinOnce(const BackendInput& input) {
                     "Update callback for at least the "
                     "Frontend? Do so by using "
                     "registerMapUpdateCallback function.";
+    }
+
+    // JT-ZERO diagnostic: expose the three pose/state stages that are
+    // otherwise easy to conflate in BackendOutput:
+    //   PRED  = IMU preintegration prediction for the current keyframe,
+    //   STATE = latest absolute smoother state,
+    //   INCR  = chained relative-pose output normally published by Kimera.
+    // This is diagnostic-only and does not modify the estimator.
+    if (std::getenv("JTZERO_DIAG_CHAIN") != nullptr && curr_kf_id_ > 0) {
+      const auto jt_pred_p = debug_info_.navstate_k_.pose().translation();
+      const auto jt_state_p = W_Pose_B_lkf_from_state_.translation();
+      const auto jt_incr_p = W_Pose_B_lkf_from_increments_.translation();
+      const auto jt_pred_v = debug_info_.navstate_k_.velocity();
+      const auto jt_state_v = W_Vel_B_lkf_;
+
+      std::cerr << "[JT-CHAIN]"
+                << " kf=" << curr_kf_id_
+                << " ts=" << input.timestamp_
+                << " predP=[" << jt_pred_p.transpose() << "]"
+                << " stateP=[" << jt_state_p.transpose() << "]"
+                << " incrP=[" << jt_incr_p.transpose() << "]"
+                << " predV=[" << jt_pred_v.transpose() << "]"
+                << " stateV=[" << jt_state_v.transpose() << "]"
+                << " dPredStatePmm="
+                << (jt_state_p - jt_pred_p).norm() * 1000.0
+                << " dStateIncrPmm="
+                << (jt_incr_p - jt_state_p).norm() * 1000.0
+                << " dPredStateVmmps="
+                << (jt_state_v - jt_pred_v).norm() * 1000.0
+                << std::endl;
     }
 
     // Create Backend Output Payload.
