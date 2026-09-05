@@ -9,6 +9,9 @@
 
 #include <time.h>
 
+#include <cstdlib>
+#include <iostream>
+
 #include <algorithm>   // for sort
 #include <functional>  // for less<>
 #include <map>         // for map<>
@@ -363,7 +366,18 @@ TrackingStatusPose Tracker::geometricOutlierRejection2d2d(
                                  cur_frame->keypoints_,
                                  matches_ref_cur,
                                  &disparity)) {
-        if (disparity < tracker_params_.disparityThreshold_) {
+        const bool jtzero_low_disparity =
+            disparity < tracker_params_.disparityThreshold_;
+        if (std::getenv("JTZERO_DIAG_DISPARITY") != nullptr) {
+          std::cerr << "[JT-DISP]"
+                    << " ref=" << ref_frame->id_
+                    << " cur=" << cur_frame->id_
+                    << " px=" << disparity
+                    << " threshold=" << tracker_params_.disparityThreshold_
+                    << " low=" << (jtzero_low_disparity ? 1 : 0)
+                    << std::endl;
+        }
+        if (jtzero_low_disparity) {
           LOG(INFO) << "Low mono disparity.";
           result.first = TrackingStatus::LOW_DISPARITY;
         }
