@@ -242,8 +242,10 @@ BackendOutput::UniquePtr VioBackend::spinOnce(const BackendInput& input) {
     output_payload = std::make_unique<BackendOutput>(
         VioNavStateTimestamped(
             input.timestamp_,
-            (FLAGS_no_incremental_pose ? W_Pose_B_lkf_from_state_
-                                       : W_Pose_B_lkf_from_increments_),
+            ((FLAGS_no_incremental_pose ||
+              std::getenv("JTZERO_USE_STATE_OUTPUT") != nullptr)
+                 ? W_Pose_B_lkf_from_state_
+                 : W_Pose_B_lkf_from_increments_),
             W_Vel_B_lkf_,
             imu_bias_lkf_),
         // TODO(Toni): Make all below optional!!
