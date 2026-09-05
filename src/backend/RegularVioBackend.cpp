@@ -233,14 +233,20 @@ bool RegularVioBackend::addVisualInertialStateAndOptimize(
         //  - third and later consecutive LOW_DISPARITY KFs: confirmed stationary,
         //    apply both zero-velocity and no-motion pose constraints.
         if (jtzero_low_disparity_streak_ == 1) {
-          LOG(INFO) << "[JT-ZUPT] candidate streak=1: defer stationary factors";
+          std::cerr << "[JT-ZUPT] candidate streak=1: defer stationary factors"
+                  << " kf=" << curr_kf_id_
+                  << " staged=1" << std::endl;
         } else if (jtzero_low_disparity_streak_ == 2) {
-          LOG(INFO) << "[JT-ZUPT] candidate streak=2: add zero-velocity only";
+          std::cerr << "[JT-ZUPT] candidate streak=2: add zero-velocity only"
+                  << " kf=" << curr_kf_id_
+                  << " staged=1" << std::endl;
           addZeroVelocityPrior(curr_kf_id_);
         } else {
-          LOG(INFO) << "[JT-ZUPT] confirmed streak="
+          std::cerr << "[JT-ZUPT] confirmed streak="
                     << jtzero_low_disparity_streak_
-                    << ": add zero-velocity + no-motion";
+                    << ": add zero-velocity + no-motion"
+                    << " kf=" << curr_kf_id_
+                    << " staged=1" << std::endl;
           addZeroVelocityPrior(curr_kf_id_);
           addNoMotionFactor(last_kf_id_, curr_kf_id_);
         }
