@@ -25,6 +25,8 @@
 #include <gtsam/slam/PriorFactor.h>
 #include <gtsam/slam/ProjectionFactor.h>
 
+#include <cstdlib>
+
 #include "kimera-vio/factors/PointPlaneFactor.h"
 #include "kimera-vio/utils/UtilsNumerical.h"
 
@@ -378,12 +380,91 @@ bool RegularVioBackend::addVisualInertialStateAndOptimize(
   // This lags 1 step behind to mimic hw.
   imu_bias_prev_kf_ = imu_bias_lkf_;
 
+  // JT-ZERO diagnostic: compare the IMU-predicted initial state of this
+  // keyframe with the optimized state returned for the same keyframe.
+  const bool jtzero_diag_prepost =
+      std::getenv("JTZERO_DIAG_PREPOST") != nullptr;
+
+  gtsam::Pose3 jtzero_pre_pose;
+  gtsam::Vector3 jtzero_pre_vel = gtsam::Vector3::Zero();
+  gtsam::imuBias::ConstantBias jtzero_pre_bias;
+
+  if (jtzero_diag_prepost) {
+    const auto pose_key = gtsam::Symbol(kPoseSymbolChar, curr_kf_id_);
+    const auto vel_key = gtsam::Symbol(kVelocitySymbolChar, curr_kf_id_);
+    const auto bias_key = gtsam::Symbol(kImuBiasSymbolChar, curr_kf_id_);
+
+    CHECK(new_values_.exists(pose_key));
+    CHECK(new_values_.exists(vel_key));
+    CHECK(new_values_.exists(bias_key));
+
+    jtzero_pre_pose = new_values_.at<gtsam::Pose3>(pose_key);
+    jtzero_pre_vel = new_values_.at<gtsam::Vector3>(vel_key);
+    jtzero_pre_bias =
+        new_values_.at<gtsam::imuBias::ConstantBias>(bias_key);
+  }
+
   VLOG(10) << "Starting optimize...";
   bool is_smoother_ok = optimize(timestamp_kf_nsec,
                                  curr_kf_id_,
                                  backend_params_.numOptimize_,
                                  delete_slots);
   VLOG(10) << "Finished optimize.";
+
+  if (jtzero_diag_prepost && is_smoother_ok) {
+    const gtsam::Pose3& jtzero_post_pose = W_Pose_B_lkf_from_state_;
+    const gtsam::Vector3& jtzero_post_vel = W_Vel_B_lkf_;
+    const gtsam::imuBias::ConstantBias& jtzero_post_bias = imu_bias_lkf_;
+
+    const gtsam::Vector3 pre_p = jtzero_pre_pose.translation();
+    const gtsam::Vector3 post_p = jtzero_post_pose.translation();
+    const gtsam::Vector3 pre_rpy = jtzero_pre_pose.rotation().rpy();
+    const gtsam::Vector3 post_rpy = jtzero_post_pose.rotation().rpy();
+    const gtsam::Vector3 pre_ba = jtzero_pre_bias.accelerometer();
+    const gtsam::Vector3 post_ba = jtzero_post_bias.accelerometer();
+    const gtsam::Vector3 pre_bg = jtzero_pre_bias.gyroscope();
+    const gtsam::Vector3 post_bg = jtzero_post_bias.gyroscope();
+
+    const char* status_str =
+        kfTrackingStatus_mono == TrackingStatus::VALID
+            ? "VALID"
+            : kfTrackingStatus_mono == TrackingStatus::LOW_DISPARITY
+                  ? "LOW_DISPARITY"
+                  : kfTrackingStatus_mono == TrackingStatus::FEW_MATCHES
+                        ? "FEW_MATCHES"
+                        : kfTrackingStatus_mono == TrackingStatus::INVALID
+                              ? "INVALID"
+                              : kfTrackingStatus_mono == TrackingStatus::DISABLED
+                                    ? "DISABLED"
+                                    : "OTHER";
+
+    constexpr double kRadToDeg = 57.2957795130823208768;
+    LOG(INFO)
+        << "[JT-PREPOST]"
+        << " kf=" << curr_kf_id_
+        << " status=" << status_str
+        << " smart=" << debug_info_.numAddedSmartF_
+        << " preP=[" << pre_p.transpose() << "]"
+        << " postP=[" << post_p.transpose() << "]"
+        << " dPmm=" << (post_p - pre_p).norm() * 1000.0
+        << " preV=[" << jtzero_pre_vel.transpose() << "]"
+        << " postV=[" << jtzero_post_vel.transpose() << "]"
+        << " dVmmps=" << (jtzero_post_vel - jtzero_pre_vel).norm() * 1000.0
+        << " preRPYdeg=["
+        << pre_rpy.x() * kRadToDeg << " "
+        << pre_rpy.y() * kRadToDeg << " "
+        << pre_rpy.z() * kRadToDeg << "]"
+        << " postRPYdeg=["
+        << post_rpy.x() * kRadToDeg << " "
+        << post_rpy.y() * kRadToDeg << " "
+        << post_rpy.z() * kRadToDeg << "]"
+        << " preBA=[" << pre_ba.transpose() << "]"
+        << " postBA=[" << post_ba.transpose() << "]"
+        << " dBA=" << (post_ba - pre_ba).norm()
+        << " preBG=[" << pre_bg.transpose() << "]"
+        << " postBG=[" << post_bg.transpose() << "]"
+        << " dBG=" << (post_bg - pre_bg).norm();
+  }
 
   if (is_smoother_ok) {
     // Sanity check: ensure no one is removing planes outside
