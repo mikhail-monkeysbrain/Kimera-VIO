@@ -26,6 +26,7 @@
 #include <gtsam/slam/ProjectionFactor.h>
 
 #include <cstdlib>
+#include <iostream>
 
 #include "kimera-vio/factors/PointPlaneFactor.h"
 #include "kimera-vio/utils/UtilsNumerical.h"
@@ -384,9 +385,10 @@ bool RegularVioBackend::addVisualInertialStateAndOptimize(
   // keyframe with the optimized state returned for the same keyframe.
   const bool jtzero_diag_prepost =
       std::getenv("JTZERO_DIAG_PREPOST") != nullptr;
-  LOG(INFO) << "[JT-PREPOST-ENTER]"
+  std::cerr << "[JT-PREPOST-ENTER]"
             << " kf=" << curr_kf_id_
-            << " env=" << (jtzero_diag_prepost ? 1 : 0);
+            << " env=" << (jtzero_diag_prepost ? 1 : 0)
+            << std::endl;
 
   gtsam::Pose3 jtzero_pre_pose;
   gtsam::Vector3 jtzero_pre_vel = gtsam::Vector3::Zero();
@@ -412,10 +414,11 @@ bool RegularVioBackend::addVisualInertialStateAndOptimize(
                                  curr_kf_id_,
                                  backend_params_.numOptimize_,
                                  delete_slots);
-  LOG(INFO) << "[JT-PREPOST-OPT]"
+  std::cerr << "[JT-PREPOST-OPT]"
             << " kf=" << curr_kf_id_
             << " env=" << (jtzero_diag_prepost ? 1 : 0)
-            << " smoother_ok=" << (is_smoother_ok ? 1 : 0);
+            << " smoother_ok=" << (is_smoother_ok ? 1 : 0)
+            << std::endl;
   VLOG(10) << "Finished optimize.";
 
   if (jtzero_diag_prepost && is_smoother_ok) {
@@ -446,7 +449,7 @@ bool RegularVioBackend::addVisualInertialStateAndOptimize(
                                     : "OTHER";
 
     constexpr double kRadToDeg = 57.2957795130823208768;
-    LOG(INFO)
+    std::cerr
         << "[JT-PREPOST]"
         << " kf=" << curr_kf_id_
         << " status=" << status_str
@@ -470,7 +473,8 @@ bool RegularVioBackend::addVisualInertialStateAndOptimize(
         << " dBA=" << (post_ba - pre_ba).norm()
         << " preBG=[" << pre_bg.transpose() << "]"
         << " postBG=[" << post_bg.transpose() << "]"
-        << " dBG=" << (post_bg - pre_bg).norm();
+        << " dBG=" << (post_bg - pre_bg).norm()
+        << std::endl;
   }
 
   if (is_smoother_ok) {
