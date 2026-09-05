@@ -213,15 +213,43 @@ bool RegularVioBackend::addVisualInertialStateAndOptimize(
   gtsam::FactorIndices delete_slots(delete_slots_of_converted_smart_factors_);
   switch (kfTrackingStatus_mono) {
     case TrackingStatus::LOW_DISPARITY: {
-      // Vehicle is not moving.
+      // Vehicle is probably not moving.
       VLOG(0) << "Tracker has a LOW_DISPARITY status.";
-      VLOG(10) << "Add zero velocity and no motion factors.";
-      addZeroVelocityPrior(curr_kf_id_);
-      addNoMotionFactor(last_kf_id_, curr_kf_id_);
+
+      ++jtzero_low_disparity_streak_;
+      const bool jtzero_staged_zupt =
+          std::getenv("JTZERO_STAGED_ZUPT") != nullptr;
+
+      if (!jtzero_staged_zupt) {
+        VLOG(10) << "Add zero velocity and no motion factors.";
+        addZeroVelocityPrior(curr_kf_id_);
+        addNoMotionFactor(last_kf_id_, curr_kf_id_);
+      } else {
+        // JT-ZERO staged stationary handling:
+        //  - first LOW_DISPARITY KF: do not hard-lock pose; this transition can
+        //    occur during real slow motion and used to trigger a large fixed-lag
+        //    correction in one optimizer step.
+        //  - second LOW_DISPARITY KF: constrain velocity only.
+        //  - third and later consecutive LOW_DISPARITY KFs: confirmed stationary,
+        //    apply both zero-velocity and no-motion pose constraints.
+        if (jtzero_low_disparity_streak_ == 1) {
+          LOG(INFO) << "[JT-ZUPT] candidate streak=1: defer stationary factors";
+        } else if (jtzero_low_disparity_streak_ == 2) {
+          LOG(INFO) << "[JT-ZUPT] candidate streak=2: add zero-velocity only";
+          addZeroVelocityPrior(curr_kf_id_);
+        } else {
+          LOG(INFO) << "[JT-ZUPT] confirmed streak="
+                    << jtzero_low_disparity_streak_
+                    << ": add zero-velocity + no-motion";
+          addZeroVelocityPrior(curr_kf_id_);
+          addNoMotionFactor(last_kf_id_, curr_kf_id_);
+        }
+      }
       // TODO why are we not adding the regularities here as well...?
       break;
     }
     default: {
+      jtzero_low_disparity_streak_ = 0;
       kfTrackingStatus_mono == TrackingStatus::VALID
           ? VLOG(1) << "Tracker has a VALID status."
           : kfTrackingStatus_mono == TrackingStatus::FEW_MATCHES
