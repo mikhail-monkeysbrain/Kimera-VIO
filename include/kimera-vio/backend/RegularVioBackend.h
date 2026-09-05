@@ -85,6 +85,11 @@ class RegularVioBackend : public VioBackend {
   std::vector<Plane> planes_;
   size_t nr_of_planes_ = 0;
 
+  // JT-ZERO: count consecutive LOW_DISPARITY keyframes. Used by the optional
+  // staged stationary constraint mode to avoid applying a hard pose lock on
+  // the very first low-disparity frame after a VALID run.
+  size_t jtzero_low_disparity_streak_ = 0;
+
  private:
   /* ------------------------------------------------------------------------ */
   void addLandmarksToGraph(const LandmarkIds& lmks_kf,
