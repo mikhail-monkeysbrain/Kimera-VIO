@@ -219,6 +219,8 @@ bool RegularVioBackend::addVisualInertialStateAndOptimize(
       ++jtzero_low_disparity_streak_;
       const bool jtzero_staged_zupt =
           std::getenv("JTZERO_STAGED_ZUPT") != nullptr;
+      const bool jtzero_diag_zupt =
+          std::getenv("JTZERO_DIAG_ZUPT") != nullptr;
 
       if (!jtzero_staged_zupt) {
         VLOG(10) << "Add zero velocity and no motion factors.";
@@ -233,20 +235,26 @@ bool RegularVioBackend::addVisualInertialStateAndOptimize(
         //  - third and later consecutive LOW_DISPARITY KFs: confirmed stationary,
         //    apply both zero-velocity and no-motion pose constraints.
         if (jtzero_low_disparity_streak_ == 1) {
-          std::cerr << "[JT-ZUPT] candidate streak=1: defer stationary factors"
-                  << " kf=" << curr_kf_id_
-                  << " staged=1" << std::endl;
+          if (jtzero_diag_zupt) {
+            std::cerr << "[JT-ZUPT] candidate streak=1: defer stationary factors"
+                      << " kf=" << curr_kf_id_
+                      << " staged=1" << std::endl;
+          }
         } else if (jtzero_low_disparity_streak_ == 2) {
-          std::cerr << "[JT-ZUPT] candidate streak=2: add zero-velocity only"
-                  << " kf=" << curr_kf_id_
-                  << " staged=1" << std::endl;
+          if (jtzero_diag_zupt) {
+            std::cerr << "[JT-ZUPT] candidate streak=2: add zero-velocity only"
+                      << " kf=" << curr_kf_id_
+                      << " staged=1" << std::endl;
+          }
           addZeroVelocityPrior(curr_kf_id_);
         } else {
-          std::cerr << "[JT-ZUPT] confirmed streak="
-                    << jtzero_low_disparity_streak_
-                    << ": add zero-velocity + no-motion"
-                    << " kf=" << curr_kf_id_
-                    << " staged=1" << std::endl;
+          if (jtzero_diag_zupt) {
+            std::cerr << "[JT-ZUPT] confirmed streak="
+                      << jtzero_low_disparity_streak_
+                      << ": add zero-velocity + no-motion"
+                      << " kf=" << curr_kf_id_
+                      << " staged=1" << std::endl;
+          }
           addZeroVelocityPrior(curr_kf_id_);
           addNoMotionFactor(last_kf_id_, curr_kf_id_);
         }
@@ -419,10 +427,12 @@ bool RegularVioBackend::addVisualInertialStateAndOptimize(
   // keyframe with the optimized state returned for the same keyframe.
   const bool jtzero_diag_prepost =
       std::getenv("JTZERO_DIAG_PREPOST") != nullptr;
-  std::cerr << "[JT-PREPOST-ENTER]"
-            << " kf=" << curr_kf_id_
-            << " env=" << (jtzero_diag_prepost ? 1 : 0)
-            << std::endl;
+  if (jtzero_diag_prepost) {
+    std::cerr << "[JT-PREPOST-ENTER]"
+              << " kf=" << curr_kf_id_
+              << " env=1"
+              << std::endl;
+  }
 
   gtsam::Pose3 jtzero_pre_pose;
   gtsam::Vector3 jtzero_pre_vel = gtsam::Vector3::Zero();
@@ -448,11 +458,13 @@ bool RegularVioBackend::addVisualInertialStateAndOptimize(
                                  curr_kf_id_,
                                  backend_params_.numOptimize_,
                                  delete_slots);
-  std::cerr << "[JT-PREPOST-OPT]"
-            << " kf=" << curr_kf_id_
-            << " env=" << (jtzero_diag_prepost ? 1 : 0)
-            << " smoother_ok=" << (is_smoother_ok ? 1 : 0)
-            << std::endl;
+  if (jtzero_diag_prepost) {
+    std::cerr << "[JT-PREPOST-OPT]"
+              << " kf=" << curr_kf_id_
+              << " env=1"
+              << " smoother_ok=" << (is_smoother_ok ? 1 : 0)
+              << std::endl;
+  }
   VLOG(10) << "Finished optimize.";
 
   if (jtzero_diag_prepost && is_smoother_ok) {
