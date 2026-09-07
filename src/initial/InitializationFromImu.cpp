@@ -18,8 +18,48 @@
 #include <iostream>
 
 #include <gtsam/base/Vector.h>
+#include <gtsam/geometry/Unit3.h>
 
 namespace VIO {
+
+namespace {
+
+// JT-ZERO opt-in initialization path. Kimera's generic AlignGravityVectors()
+// treats vectors with (1 - dot) < 1e-3 as already aligned. That corresponds
+// to roughly 2.56 degrees and is too large for the JT-Zero stationary startup:
+// a real ~2.4 degree tilt was being collapsed to identity and absorbed into
+// accelerometer bias. Keep the upstream behavior unchanged unless the explicit
+// environment switch is enabled.
+gtsam::Rot3 AlignGravityVectorsExactForJtZero(
+    const gtsam::Vector3& local_gravity_dir,
+    const gtsam::Vector3& global_gravity_dir) {
+  gtsam::Unit3 local_gravity(local_gravity_dir);
+  gtsam::Unit3 global_gravity(global_gravity_dir);
+
+  const double c = local_gravity.dot(global_gravity);
+  constexpr double kExactEps = 1e-12;
+  if (std::fabs(1.0 - c) < kExactEps) {
+    return gtsam::Rot3();
+  }
+
+  gtsam::Unit3 cross_product = local_gravity.cross(global_gravity);
+  if (std::fabs(1.0 + c) < kExactEps) {
+    gtsam::Unit3 perturbed_gravity(
+        local_gravity.unitVector() + gtsam::Vector3(1, 2, 3));
+    cross_product = local_gravity.cross(perturbed_gravity);
+    if (std::isnan(cross_product.unitVector()(0))) {
+      perturbed_gravity = gtsam::Unit3(
+          local_gravity.unitVector() + gtsam::Vector3(3, 2, 1));
+      cross_product = local_gravity.cross(perturbed_gravity);
+    }
+    return gtsam::Rot3::Expmap(cross_product.unitVector() * M_PI);
+  }
+
+  return gtsam::Rot3::AlignPair(
+      cross_product, global_gravity, local_gravity);
+}
+
+}  // namespace
 
 VioNavState InitializationFromImu::getInitialStateEstimate(
     const ImuAccGyrS& imu_accgyr,
@@ -64,6 +104,10 @@ VioNavState InitializationFromImu::getInitialStateEstimate(
 
     std::cerr
         << "[JT-IMU-INIT]"
+        << " initMode="
+        << (std::getenv("JTZERO_GRAVITY_ALIGNED_IMU_INIT") != nullptr
+                ? "jtzero_exact_gravity"
+                : "kimera_default")
         << " samples=" << imu_accgyr.cols()
         << " meanAcc=[" << mean_acc.transpose() << "]"
         << " accNorm=" << mean_acc.norm()
@@ -91,8 +135,13 @@ gtsam::Pose3 InitializationFromImu::guessPoseFromImuMeasurements(
   gtsam::Vector3 measured_gravity = -1.0 * mean_acc;
   // Align measured gravity with real gravity to figure out our attitude.
   // Assumes gravity aligned along an axis.
+  const bool jtzero_gravity_aligned_init =
+      std::getenv("JTZERO_GRAVITY_ALIGNED_IMU_INIT") != nullptr;
   gtsam::Rot3 attitude_wrt_gravity =
-      UtilsOpenCV::AlignGravityVectors(measured_gravity, global_gravity, round);
+      jtzero_gravity_aligned_init
+          ? AlignGravityVectorsExactForJtZero(measured_gravity, global_gravity)
+          : UtilsOpenCV::AlignGravityVectors(
+                measured_gravity, global_gravity, round);
   // Absolute translation is unobservable, so return [0, 0, 0].
   return gtsam::Pose3(attitude_wrt_gravity, gtsam::Point3::Zero());
 }
