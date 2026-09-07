@@ -14,6 +14,9 @@
 
 #include "kimera-vio/initial/InitializationFromImu.h"
 
+#include <cstdlib>
+#include <iostream>
+
 #include <gtsam/base/Vector.h>
 
 namespace VIO {
@@ -48,6 +51,33 @@ VioNavState InitializationFromImu::getInitialStateEstimate(
 
   // Guess IMU bias. Assumes static vehicle!
   ImuBias imu_bias_guess = guessImuBias(mean_accgyr, local_gravity);
+
+  // JT-ZERO diagnostic: expose the exact stationary IMU packet and the
+  // pose/bias seed produced by InitializationFromImu. This is intentionally
+  // gated by an environment variable and does not change initialization math.
+  if (std::getenv("JTZERO_DIAG_IMU_INIT") != nullptr) {
+    constexpr double kRadToDeg = 57.2957795130823208768;
+
+    const gtsam::Vector3 mean_acc = mean_accgyr.head(3);
+    const gtsam::Vector3 mean_gyro = mean_accgyr.tail(3);
+    const gtsam::Vector3 rpy = initial_pose_guess.rotation().rpy();
+
+    std::cerr
+        << "[JT-IMU-INIT]"
+        << " samples=" << imu_accgyr.cols()
+        << " meanAcc=[" << mean_acc.transpose() << "]"
+        << " accNorm=" << mean_acc.norm()
+        << " meanGyro=[" << mean_gyro.transpose() << "]"
+        << " globalG=[" << global_gravity.transpose() << "]"
+        << " localG=[" << local_gravity.transpose() << "]"
+        << " initRPYdeg=["
+        << rpy.x() * kRadToDeg << " "
+        << rpy.y() * kRadToDeg << " "
+        << rpy.z() * kRadToDeg << "]"
+        << " initBA=[" << imu_bias_guess.accelerometer().transpose() << "]"
+        << " initBG=[" << imu_bias_guess.gyroscope().transpose() << "]"
+        << std::endl;
+  }
 
   // Return estimated state.
   return VioNavState(initial_pose_guess, velocity_guess, imu_bias_guess);
